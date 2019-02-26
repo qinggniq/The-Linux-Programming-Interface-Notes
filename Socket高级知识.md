@@ -31,7 +31,10 @@ Returns 0 on success, or –1 on erro
 |-----------|---------------------------------------------------------------------------------------------|
 | SHUT_RD   | 关闭读（读返回**EOF**），可以写，连接对方会收到**SIGPIPE**信号，写的时候会产生**EPIPE**错误 |
 | SHUT_WR   | 关闭写（写会收到**SIGPIPE**信号，产生**EPIPE**错误），可以读，应用于`ssh, rsh`程序          |
-| SHUT_RDWR | 关闭读写                                                                                            |
+| SHUT_RDWR | 关闭读写                                                                                    |
+
+
+
 `shutdown()`针对的是`file description`而非`file descriptor`，因此对文件描述符的`shutdown()`会影响所有指向此`file description`的`file descriptor`。而相对的`close()`针对的是`file descriptor`，然而由于`shutdown()`不能关闭文件描述符，所以总是得调用`close()`去关闭`file descriptor`。
 
 
