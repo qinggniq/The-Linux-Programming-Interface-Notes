@@ -1,0 +1,54 @@
+[toc]
+# Socket高级知识
+## 流Socket的部分读
+部分读意思是`read(), write()`系统调用没有读够需要长度的字节数。以下情况发生时会发生部分读：  
+1. 内核Buffer不够
+2. `write()`被信号中断
+3. `socket`以**O_NONBLOCK**模式打开
+4. **异步错误**发生，比如对方的连接断开
+
+部分IO并不是错误，只要读写了1个字节都算成功。
+
+### 处理部分IO的函数
+```c
+#include "rdwrn.h"
+ssize_t readn(int fd, void *buffer, size_t count);
+Returns number of bytes read, 0 on EOF, or –1 on error
+ssize_t writen(int fd, void *buffer, size_t count );
+Returns number of bytes written, or –1 on erro
+```
+具体实现:在书的*Listing 61-1*
+
+## shutdown()系统调用
+```c
+#include <sys/socket.h>
+int shutdown(int sockfd , int how);
+Returns 0 on success, or –1 on erro
+```
+关闭单向或者双向连接，具体取决于`how`参数。
+
+| 参数值    | 行为                                                                                        |
+|-----------|---------------------------------------------------------------------------------------------|
+| SHUT_RD   | 关闭读（读返回**EOF**），可以写，连接对方会收到**SIGPIPE**信号，写的时候会产生**EPIPE**错误 |
+| SHUT_WR   | 关闭写（写会收到**SIGPIPE**信号，产生**EPIPE**错误），可以读，应用于`ssh, rsh`程序          |
+| SHUT_RDWR | 关闭读写                                                                                            |
+`shutdown()`针对的是`file description`而非`file descriptor`，因此对文件描述符的`shutdown()`会影响所有指向此`file description`的`file descriptor`。而相对的`close()`针对的是`file descriptor`，然而由于`shutdown()`不能关闭文件描述符，所以总是得调用`close()`去关闭`file descriptor`。
+
+
+## Socket特定IO系统调用 recv(), send()
+```c
+#include <sys/socket.h>
+ssize_t recv(int sockfd , void *buffer, size_t length, int flags);
+//Returns number of bytes received, 0 on EOF, or –1 on error
+ssize_t send(int sockfd , const void *buffer, size_t length, int flags);
+//Returns number of bytes sent, or –1 on error
+```
+
+
+
+
+
+
+
+
+
