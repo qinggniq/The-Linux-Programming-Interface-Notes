@@ -84,3 +84,6 @@ ssize_t sendfile(int out_fd, int in_fd, off_t *offset, size_t count);
 
 ## getsockname(), getpeername()
 用于获取对应`sfd`的地址信息和流Socket对应的对方`socket`信息。
+
+## TCP深探
+### TCP段格式
