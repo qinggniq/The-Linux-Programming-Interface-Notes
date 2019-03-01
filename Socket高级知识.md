@@ -84,3 +84,59 @@ ssize_t sendfile(int out_fd, int in_fd, off_t *offset, size_t count);
 
 ## getsockname(), getpeername()
 用于获取对应`sfd`的地址信息和流Socket对应的对方`socket`信息。
+
+## TCP深探
+### TCP段格式
+HOLD
+
+
+### 使用shutdown()函数
+`shutdown()`的**SHUT_RD**并不是在TCP层面上实现的，不同系统有不同实现，Linux内核只是在用户读的时候返回**EOF**，而实际上另一方依然发送数据的话，在本地`socket`上还是会读到数据的。综上，使用**SHUT_RD**不适合移植。
+### TIME_WAIT状态
+目的  
+1. 保证可靠地关闭连接
+2. 保证在网络中的旧重复段失效，使之不能被新的连接所感知
+
+它的`time_out`是两倍的**MSL**
+#### 保证可靠地关闭连接
+由TCP状态变迁图可知，假设发起主动关闭的一方（client）最后发送的ACK在网络中丢失，由于TCP协议的重传机制，执行被动关闭的一方（server）将会重发其FIN，在该FIN到达client之前，client必须维护这条连接状态，也就说这条TCP连接所对应的资源（client方的local_ip,local_port）不能被立即释放或重新分配，直到另一方重发的FIN达到之后，client重发ACK后，经过2MSL时间周期没有再收到另一方的FIN之后，该TCP连接才能恢复初始的CLOSED状态。如果主动关闭一方不维护这样一个TIME_WAIT状态，那么当被动关闭一方重发的FIN到达时，主动关闭一方的TCP传输层会用RST包响应对方，这会被对方认为是有错误发生，然而这事实上只是正常的关闭连接过程，并非异常。
+### 保证在网络中的旧重复段失效，使之不能被新的连接所感知
+
+为说明这个问题，我们先假设TCP协议中不存在TIME_WAIT状态的限制，再假设当前有一条TCP连接：(local_ip, local_port, remote_ip,remote_port)，因某些原因，我们先关闭，接着很快以相同的四元组建立一条新连接。本文前面介绍过，TCP连接由四元组唯一标识，因此，在我们假设的情况中，TCP协议栈是无法区分前后两条TCP连接的不同的，在它看来，这根本就是同一条连接，中间先释放再建立的过程对其来说是“感知”不到的。这样就可能发生这样的情况：前一条TCP连接由local peer发送的数据到达remote peer后，会被该remot peer的TCP传输层当做当前TCP连接的正常数据接收并向上传递至应用层（而事实上，在我们假设的场景下，这些旧数据到达remote peer前，旧连接已断开且一条由相同四元组构成的新TCP连接已建立，因此，这些旧数据是不应该被向上传递至应用层的），从而引起数据错乱进而导致各种无法预知的诡异现象。作为一种可靠的传输协议，TCP必须在协议层面考虑并避免这种情况的发生，这正是TIME_WAIT状态存在的第2个原因。
+## Socket选项
+```c
+#include <sys/socket.h>
+int getsockopt(int sockfd, int level, int optname, void *optval,
+               socklen_t *optlen);
+int setsockopt(int sockfd, int level, int optname, const void *optval,
+               socklen_t optlen);
+//Both return 0 on success, or –1 on error
+```
+`socket options`是对应于`file description`的，所以设置了之后，`dup(), fork()`后的都能用。
+## SO_REUSEADDR选项
+为了解决当关闭连接后，之前连接的端口不能立刻用作新的连接的问题。  
+1. `close()`后，在**TIME_WAIT**状态
+2. 服务器创建了子进程去处理连接，服务器关闭后，子进程继续处理请求？？？
+
+开启之后我们就可以复用本机端口了。
+## 标志和选项（flag, options）的继承性
+以下属性在`accept()`后不继承：  
+1. 能用`fcntl() F_SETL`修改的标志，如**O_NONBLOCK, OASYNC**
+2. 能用`fcntl() F_SETD`修改的标志，如**FD_CLOEXEC**
+3. **F_SETOWN, F_SETSIG**标志
+
+## TCP vs UDP
+### 什么时候选择UDP?  
+1. 一个UDP server可以接受多个客户端的数据报而不需要创建、关闭连接。
+2. 对于简单“请求、响应”服务器，UDP效率更高，**TCP = RTT*2 + SPT; UDP = RTT + SPT**，**DNS**就是其中的代表。
+3. 可以**广播、多播**
+4. 视频流和音频流的传输不需要TCP提供的可靠性，TCP的错误处理会使之产生延时，这是不能接受的。
+### UDP想保证可靠怎么办？
+自己实现**序列号、确认号、重发、重复检测**的功能，然而如果想更进一步实现**流量控制、拥塞控制**，最好用TCP。
+
+## 高级特性
+### Out-of-Band Data
+就是提高传输数据的优先级别，在远程登陆的软件`telnet, rlogin, ftp`上很常用，因为要取消之前执行的命令。
+1. 使用`send(), recv()`设置**MSG_OOB**标志，`socket`读到后产生**SIGURG**中断（之前得用`fcntl()`设置**F_SETOWN**标志）。
+
+不过并不建议使用这个，可以创建两个连接，一个正常传输，一个传输高优先级的数据。
